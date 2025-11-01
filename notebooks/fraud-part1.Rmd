@@ -1,0 +1,532 @@
+---
+title: "Imbalanced Classification for Fraud Detection - Part 1"
+author: "Amanda Magzal"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+---
+
+
+\newpage
+
+# Introduction
+
+In this project, I study imbalanced classification and its impact on classification algorithms.
+
+In part 1, I develop a statistical model for imbalanced classification, and use a Monte Carlo simulation in order to study via training-testing procedures the classification accuracy of logistic regression, taking into account the model I developed.
+
+
+```{r libraries, include=FALSE}
+library(pander)
+library(MASS)
+library(tidyverse)
+library(boot)
+library(fitdistrplus)
+library(RColorBrewer)
+
+set.seed(7)
+```
+
+&nbsp;
+
+# Data
+
+The data includes information about clients who made credit card transactions and whether it turned out to be fraud.
+
+Features:
+
+- ID - Client Number
+- GENDER - M: Male, F: Female
+- CAR - Owns car
+- REALITY - Owns a property
+- NO_OF_CHILD - Number of children
+- INCOME - Anual income
+- EDUCATION_TYPE - Education level
+- FAMILY_TYPE - Marital status
+- HOUSE_TYPE - House type
+- FLAG_MOBILE - Owns a mobile phone
+- WORK_PHONE - Owns a work phone
+- PHONE - Owns a phone
+- OCCUPATION_TYPE - Occupation
+- FAMILY_SIZE - Number of family members
+- BEGIN_MONTH - The month of the extracted data
+- YEARS_EMPLOYED - Years of employment
+- Target - Fraud: 1, Not Fraud: 0
+
+&nbsp;
+
+```{r echo=FALSE, message=FALSE}
+dat <- read.csv('credit_dataset.csv')
+N <- nrow(dat)
+attach(dat)
+pander(head(dat[,c(1:8)]), caption = 'Dataset')
+```
+
+&nbsp;
+
+The `X` column is just the index, the `ID` and `BEGIN_MONTH` columns are irrelevant and thus will be removed. 
+
+&nbsp;
+
+```{r}
+dat <- dat %>% dplyr::select(-X, -ID, -BEGIN_MONTH)
+```
+
+&nbsp;
+
+The `FLAG_MOBIL` has only one unique value (everyone owns a phone), and will also be removed. 
+
+&nbsp;
+
+```{r}
+unique(dat$FLAG_MOBIL)
+dat <- dat %>% dplyr::select(-FLAG_MOBIL)
+```
+
+&nbsp;
+
+The `FAMILY.SIZE` and `NO_OF_CHILD` variables are highly correlated. Therefore, I decided to remove the `FAMILY.SIZE` variable.
+
+&nbsp;
+
+```{r}
+cor(FAMILY.SIZE, NO_OF_CHILD)
+dat <- dat %>% dplyr::select(-FAMILY.SIZE)
+```
+
+&nbsp;
+
+The dataset is extremely imbalanced, with only 1.7% fraud transactions.
+
+```{r echo=FALSE, fig.height=4, fig.width=5, fig.align='center'}
+ggplot(dat, aes(x = as.factor(TARGET), fill = as.factor(TARGET))) + 
+  geom_bar(aes(y = (..count..)/sum(..count..))) + 
+  labs(title = 'Target Barplot', x = 'Target', y = 'Percentage') +
+  scale_fill_brewer(palette = 'Blues') +
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position = 'none')
+```
+
+\newpage
+
+# Statistical Model - Logistic Regression
+
+To select the features to be included in the model, I fit a logistic regression model to the data.
+
+&nbsp;
+
+```{r}
+full.model <- glm(TARGET ~ ., data = dat, family = 'binomial')
+```
+
+&nbsp;
+
+Next, I perform stepwise selection to find the best model.
+
+&nbsp;
+
+```{r}
+step.model <- full.model %>% stepAIC(trace = FALSE)
+summary(step.model)
+```
+
+&nbsp;
+
+The coefficients for the logistic regression model that I develop will be the ones estimated for the original data.
+
+```{r}
+beta <- as.vector(coef(step.model))
+```
+
+\newpage
+
+## Feature 1 - Gender
+
+&nbsp;
+
+The gender feature's distribution is shown in the following plot.
+
+&nbsp;
+
+```{r echo=FALSE, fig.height=4, fig.width=5, fig.align='center'}
+ggplot(dat, aes(x = GENDER, fill = GENDER)) + geom_bar() + 
+  labs(title = 'Gender Barplot', x = 'Gender') +
+  scale_fill_brewer(palette = 'Blues') +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position = 'none')
+```
+
+&nbsp;
+
+I define the feature `Male` as follows:
+$$
+\text{Male} \sim \text{Bernoulli}(0.3781)
+$$
+
+&nbsp;
+
+The value of $p$ is the proportion of males in the dataset.
+
+&nbsp;
+
+```{r}
+(p.male <- nrow(dat[GENDER == 'M',])/N)
+```
+
+\newpage
+
+## Feature 2 - Reality
+
+&nbsp;
+
+The reality feature's distribution is shown in the following plot.
+
+&nbsp;
+
+```{r echo=FALSE, fig.height=4, fig.width=5, fig.align='center'}
+ggplot(dat, aes(x = REALITY, fill = REALITY)) + geom_bar() + 
+  labs(title = 'Reality Barplot', x = 'Reality') +
+  scale_fill_brewer(palette = 'Blues') +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position = 'none')
+```
+
+&nbsp;
+
+I define the feature `Reality` as follows:
+$$
+\text{Reality} \sim \text{Bernoulli}(0.655)
+$$
+
+&nbsp;
+
+The value of $p$ is the proportion of people who own property in the dataset.
+
+&nbsp;
+
+```{r}
+(p.reality <- nrow(dat[REALITY == 'Y',])/N)
+```
+
+\newpage
+
+## Feature 3 - Income Type
+
+&nbsp;
+
+The income type feature's distribution is shown in the following plot.
+
+&nbsp;
+
+```{r echo=FALSE, fig.height=4, fig.width=6, fig.align='center'}
+ggplot(dat, aes(x = INCOME_TYPE, fill = INCOME_TYPE)) + geom_bar() + 
+  labs(title = 'Income Type Barplot', x = 'Income Type') +
+  scale_fill_brewer(palette = 'Blues') +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position = 'none')
+```
+
+&nbsp;
+
+I define the feature `Income Type` as follows:
+
+$$
+\text{Income Type} = 
+\begin{cases}
+\text{Commercial associate} & 0.2806 \\ 
+\text{Pensioner} & 0.0006 \\ 
+\text{State servant} & 0.0969 \\
+\text{Student} & 0.0004 \\
+\text{Working} & 0.6215
+\end{cases}
+$$
+
+&nbsp;
+
+The value of $p$ for each value is its corresponding proportion in the dataset.
+
+&nbsp;
+
+```{r}
+(p.incomeType <- as.vector(table(dat$INCOME_TYPE)/N))
+```
+
+\newpage
+
+## Feature 4 - Family Type
+
+&nbsp;
+
+The family type feature's distribution is shown in the following plot.
+
+&nbsp;
+
+```{r echo=FALSE, fig.height=4, fig.width=6, fig.align='center'}
+ggplot(dat, aes(x = FAMILY_TYPE, fill = FAMILY_TYPE)) + geom_bar() + 
+  labs(title = 'Family Type Barplot', x = 'Family Type') +
+  scale_fill_brewer(palette = 'Blues') +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position = 'none')
+```
+
+&nbsp;
+
+I define the feature `Family Type` as follows:
+
+$$
+\text{Family Type} = 
+\begin{cases}
+\text{Civil marriage} & 0.0849 \\ 
+\text{Married} & 0.6966 \\ 
+\text{Separated} & 0.0584 \\
+\text{Single / not married} & 0.1370 \\
+\text{Widow} & 0.0231
+\end{cases}
+$$
+&nbsp;
+
+The value of $p$ for each value is its corresponding proportion in the dataset.
+
+&nbsp;
+
+```{r}
+(p.familyType <- as.vector(table(FAMILY_TYPE)/N))
+```
+
+\newpage
+
+## Feature 5 - Years Employed
+
+&nbsp;
+
+The years employed feature's distribution is shown in the following plot.
+
+&nbsp;
+
+```{r echo=FALSE, fig.height=3, fig.width=5, fig.align='center', message=FALSE}
+ggplot(dat, aes(x = YEARS_EMPLOYED)) + geom_histogram(fill = '#6baed6') + 
+  labs(title = 'Years Employed Histogram', x = 'Years Employed') +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position = 'none')
+```
+
+&nbsp;
+
+To fit the a suitable distribution for this feature, I used the `fitdist` method from the `MASS` package.
+
+&nbsp;
+
+```{r}
+fe <- fitdist(YEARS_EMPLOYED, "exp")
+```
+
+```{r echo=FALSE, fig.align='center', fig.height=3.5, fig.width=6}
+plot.legend <- c("Exponential")
+denscomp(list(fe), legendtext = plot.legend)
+```
+
+&nbsp;
+
+Thus, I define the feature `Years Employed` as follows:
+
+$$
+\text{Years Employed} \sim \text{Exp}(0.1388)
+$$
+
+&nbsp;
+
+The distribution's parameter is the MLE estimate produced by the `fitdist` method.
+
+&nbsp;
+
+```{r}
+(p.yearsEmployed <- as.vector(fe$estimate))
+```
+
+
+&nbsp;
+
+
+# Creating a Sample Dataset
+
+To create a dataset from the model that I developed, I create four functions.
+
+&nbsp;
+
+## `get.X`
+
+The function recieves the number of desired observations $n$ and randomly samples $n$ observations of each of the features, according to their distributions.
+
+Note that the features are sampled independently, which may not be the most accurate procedure.
+
+&nbsp;
+
+```{r}
+get.X <- function(n){
+  
+  x0 <- rep(1, n)
+  gender <- rbernoulli(n, p.male)
+  reality <- rbernoulli(n, p.reality)
+  income.type <- sample(unique(INCOME_TYPE), n, replace = T, prob = p.incomeType)
+  family.type <- sample(unique(FAMILY_TYPE), n, replace = T, prob = p.familyType)
+  years.employed <- rexp(n, p.yearsEmployed)
+  
+  df <- cbind(x0, gender, reality, income.type, family.type, years.employed)
+  return(as.data.frame(df))
+}
+```
+
+&nbsp;
+
+## `get.dummies`
+
+The function recieves a dataset as input and creates dummy variables.
+
+&nbsp;
+
+```{r}
+get.dummies <- function(df){
+  
+  # gender column
+  df$gender_M <- ifelse(df$gender == T, 1, 0)
+  
+  # reality column
+  df$reality_Y <- ifelse(df$reality == T, 1, 0)
+  
+  # income type columns
+  df$income.type_Pensioner <- ifelse(df$income.type == 'Pensioner', 1, 0)
+  df$income.type_StateServant <- ifelse(df$income.type == 'State servant', 1, 0)
+  df$income.type_Student <- ifelse(df$income.type == 'Student', 1, 0)
+  df$income.type_Working <- ifelse(df$income.type == 'Working', 1, 0)
+  
+  # family type columns
+  df$family.type_Married <- ifelse(df$family.type == 'Married', 1, 0)
+  df$family.type_Separated <- ifelse(df$family.type == 'Separated', 1, 0)
+  df$family.type_Single <- ifelse(df$family.type == 'Single / not married', 1, 0)
+  df$family.type_Widow <- ifelse(df$family.type == 'Widow', 1, 0)
+  
+  # rearange df
+  df <- df %>% dplyr::select(-gender, -reality, -income.type, -family.type)
+  df <- df[, c(1, 3:12, 2)]
+  return(df)
+}
+```
+
+&nbsp;
+
+## `sigmoid`
+
+The function recieves a vector of coefficients and an observation, and estimates $p(x)$ which is defined as:
+$$
+p(x) = \frac{1}{1+e^{-(\beta^Tx)}}
+$$
+
+&nbsp;
+
+```{r}
+sigmoid <- function(beta, X){
+  z = sum(beta*X)
+  return(1 / (1 + exp(-z)))
+}
+```
+
+&nbsp;
+
+## `create.sample.df`
+
+The function uses the previous methods to create a sample dataset.
+
+&nbsp;
+
+```{r}
+create.sample.df <- function(num.rows=10^4){
+  
+  # create random sample of size num.rows
+  X <- get.X(num.rows)
+  # get dummies for categorical variables
+  df <- get.dummies(X)
+  # create target column
+  df$target <- NA
+  # estimate target
+  for(i in 1:nrow(df)){
+    row <- as.numeric(df[i, 1:12])
+    # calculate sigmoid
+    p <- sigmoid(beta, row)
+    # estimate target
+    df$target[i] <- sum(rbernoulli(1, p))
+  }
+  
+  # remove x0 column
+  df <- df[, -1]
+  
+  # create target=1 dataset and repeat rows
+  target1 <- df[df$target == 1, ]
+  target1 <- target1[rep(seq_len(nrow(target1)), each = 170), ]
+  
+  # add target rows to df
+  df <- bind_rows(df, target1)
+  
+  # shuffle df rows
+  rows <- sample(nrow(df))
+  df <- df[rows, ]
+  
+  # change columns to numeric
+  df$years.employed <- as.numeric(df$years.employed)
+  
+  # scale df
+  df[,c(1:11)] <- lapply(df[,c(1:11)], function(x) (scale(x)))
+  
+  return(as.data.frame(df))
+}
+```
+
+&nbsp;
+
+# Logistic Model Accuracy
+
+I create a dataset as described above and fit a logistic regression model.
+
+&nbsp;
+
+```{r message=FALSE, warning=FALSE}
+df <- create.sample.df(num.rows=10^4)
+mod <- glm(target ~ ., data = df, family = 'binomial')
+summary(mod)
+```
+
+&nbsp;
+
+Next, using CV, I estimate the accuracy of the model.
+
+&nbsp;
+
+```{r message=FALSE, warning=FALSE}
+cv.error <- cv.glm(df, mod, K = 100)
+```
+
+```{r echo=FALSE}
+err <- cv.error$delta[2]
+acc <- as.data.frame(1-err)
+row.names(acc) <- 'Accuracy'
+colnames(acc) <- 'Logistic Regression'
+pander(acc, caption = 'Model Accuracy')
+```
+
+&nbsp;
+
+The model had almost perfect accuracy because it was able to perfectly predict the majority class (aka not fraud). However, that does not necessarily mean that it was able to correctly identify the minority class (aka fraud).
+
+Thus, in part 2, I explore different sampling methods used to improve the performance of machine learning algorithms in identification of the minority class.
+
+
+
+
+
