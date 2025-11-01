@@ -38,6 +38,6 @@ Part 2 evaluates sampling techniques + ML algorithms for minority fraud detectio
 
 ## Result Summary
 
-Part 1 shows very high accuracy does **not** imply minority class detection — logistic regression almost perfectly predicts the majority class but performs poorly on fraud.
+Part 1 shows very high accuracy does **not** imply minority class detection. Logistic regression almost perfectly predicts the majority class but performs poorly on fraud.
 
-Part 2 shows that oversampling strategies, especially SMOTE and random Oversampling, substantially improve minority class sensitivity — with **Random Forest** and **Gradient Boosting** consistently performing best across rebalancing methods.
+Part 2 shows that oversampling strategies, especially SMOTE and random Oversampling, substantially improve minority class sensitivity, with **Random Forest** and **Gradient Boosting** consistently performing best across rebalancing methods.
